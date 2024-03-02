@@ -1,0 +1,46 @@
+from flask import Flask, request, jsonify
+import paramiko
+import time
+import sys
+import select
+
+app = Flask(__name__)
+
+@app.route('/ssh_connect', methods=['POST'])
+def ssh_connect():
+    try:
+        req_data = request.get_json()
+        ip = req_data['ip']
+        port = req_data['port']
+        username = req_data['username']
+        password = req_data['password']
+        
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh_client.connect(ip, port=port, username=username, password=password)
+        shell = ssh_client.invoke_shell()
+        output = interactive_session(shell)
+        ssh_client.close()
+        
+        return jsonify({'output': output}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def interactive_session(shell):
+    output = ''
+    try:
+        while True:
+            if shell.recv_ready():
+                output += shell.recv(1024).decode('utf-8')
+            else:
+                if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+                    line = sys.stdin.readline()
+                    shell.send(line)
+            time.sleep(0.1) 
+    except KeyboardInterrupt:
+        output += "\nExiting interactive session."
+    return output
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
